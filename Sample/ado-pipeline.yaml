@@ -8,7 +8,7 @@ variables:
   azureServiceConnection: AdoServiceConnection
   resourceGroupName: bicep-sandbox
   location: westeurope
-  templateFile: './BicepIac/Sample/rg.bicep'
+  templateFile: './Sample/rg.bicep'
 
 pool:
   vmImage: $(vmImageName)
