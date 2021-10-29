@@ -1,25 +1,65 @@
-# trigger:
-# - main
-
-name: Deploy Bicep files
+---
+trigger:
+  branches:
+    include:
+    # run only on main branch
+    - main
 
 variables:
-  vmImageName: ubuntu-latest
-  azureServiceConnection: AdoServiceConnection
-  resourceGroupName: bicep-sandbox
-  location: westeurope
-  templateFile: './Sample/rg.bicep'
+  vmImage: ubuntu-latest
 
-pool:
-  vmImage: $(vmImageName)
-
-steps:
-- task: AzureCLI@2
-  inputs:
-    azureSubscription: $(azureServiceConnection)
-    scriptType: bash
-    scriptLocation: inlineScript
-    inlineScript: |
-      az --version
-      az group create --name $(resourceGroupName) --location $(location)
-      az deployment group create --resource-group $(resourceGroupName) --template-file $(templateFile)
+stages:
+  - stage: Lint
+    displayName: Lint and Test
+    jobs:
+      - job: Linting
+        displayName: Linting
+        pool:
+          vmImage: $(vmImage)
+        steps:
+          - task: Bash@3
+            displayName: Install linting tools
+            inputs:
+              targetType: inline
+              script: |
+                pip install --upgrade pip
+                pip install --upgrade wheel
+                pip install --upgrade yamllint
+                sudo apt install python3-demjson
+          - task: Bash@3
+            displayName: Run YAML lint on .yml files
+            inputs:
+              targetType: inline
+              script: |
+                yamllint .
+          - task: Bash@3
+            displayName: Run JSON Lint for all .json files
+            inputs:
+              targetType: inline
+              script: |
+                find -name '*.json' -exec jsonlint --nonstrict --verbose {} \;
+                failOnStderr: false
+      - job: Testing
+        displayName: Testing
+        pool:
+          vmImage: $(vmImage)
+        steps:
+          - task: AzurePowerShell@5
+            displayName: Run PowerShell Tests
+            inputs:
+              azureSubscription: Pay-As-You-Go
+              scriptType: inlineScript
+              inline: |
+                Install-Module -Name Pester -Force
+                Install-Module Microsoft.Graph -Force
+                Select-MgProfile -Name "beta"
+                Invoke-Pester -CI
+              azurePowerShellVersion: latestVersion
+              pwsh: true
+              workingDirectory: $(Build.SourcesDirectory)
+          - task: PublishTestResults@2
+            displayName: Publish Test Results
+            inputs:
+              testResultsFormat: NUnit
+              testResultsFiles: "**/testResults.xml"
+              failTaskOnFailedTests: true
